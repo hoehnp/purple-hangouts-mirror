@@ -37,7 +37,13 @@
 #include "hangouts_connection.h"
 #include "hangouts_conversation.h"
 #include "hangouts_media.h"
+#include <sqlite3.h>
 
+#include <glib/gprintf.h>
+#include <libaccounts-glib/ag-account.h>
+#include <libaccounts-glib/ag-manager.h>
+#include <libaccounts-glib/ag-account-service.h>
+#include <glib/gstdio.h>
 
 /*****************************************************************************/
 //TODO move to nicer place
@@ -288,19 +294,34 @@ hangouts_authcode_input_cb(gpointer user_data, const gchar *auth_code)
 	hangouts_oauth_with_code(ha, auth_code);
 }
 
-static void
+/*static void
 hangouts_authcode_input_cancel_cb(gpointer user_data)
 {
 	HangoutsAccount *ha = user_data;
 	purple_connection_error(ha->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_IMPOSSIBLE, 
 		_("User cancelled authorization"));
-}
+}*/
 
 static gulong chat_conversation_typing_signal = 0;
 
 static void
 hangouts_login(PurpleAccount *account)
-{
+{	
+	//sqlite3 *accountdb;
+	//sqlite3_stmt **ppStmt;
+   	//const char **pzTail;
+  	//int error_code;
+	
+	AgManager *manager;
+	AgAccount *glib_account;
+	GVariant *token;
+	AgAccountService *account_service;
+	GList *accounts, *l;
+	AgAccountId account_id;
+ 	const gchar *token_str;
+	gchar *token_str2;
+	AgService *service;
+
 	PurpleConnection *pc;
 	HangoutsAccount *ha; //hahaha
 	const gchar *password;
@@ -345,13 +366,62 @@ hangouts_login(PurpleAccount *account)
 		hangouts_oauth_refresh_token(ha);
 	} else {
 		//TODO get this code automatically
-		purple_notify_uri(pc, "https://www.youtube.com/watch?v=hlDhp-eNLMU");
-		purple_request_input(pc, _("Authorization Code"), "https://www.youtube.com/watch?v=hlDhp-eNLMU",
-			_ ("Please follow the YouTube video to get the OAuth code"),
-			_ ("and then paste the Google OAuth code here"), FALSE, FALSE, NULL, 
-			_("OK"), G_CALLBACK(hangouts_authcode_input_cb), 
-			_("Cancel"), G_CALLBACK(hangouts_authcode_input_cancel_cb), 
-			purple_request_cpar_from_connection(pc), ha);
+		//purple_notify_uri(pc, "https://www.youtube.com/watch?v=hlDhp-eNLMU");
+		//purple_request_input(pc, _("Authorization Code"), "https://www.youtube.com/watch?v=hlDhp-eNLMU",
+		//	_ ("Please follow the YouTube video to get the OAuth code"),
+		//	_ ("and then paste the Google OAuth code here"), FALSE, FALSE, NULL, 
+		//	_("OK"), G_CALLBACK(hangouts_authcode_input_cb), 
+		//	_("Cancel"), G_CALLBACK(hangouts_authcode_input_cancel_cb), 
+		//	purple_request_cpar_from_connection(pc), ha);
+/*		
+		error_code=sqlite3_open_v2("/home/nemo/.config/libaccounts-glib/accounts.db", &accountdb, SQLITE_OPEN_READONLY, NULL);
+		if (error_code != 0)
+			purple_connection_error(ha->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_IMPOSSIBLE, _("Could not open accounts database"));
+
+   		error_code = sqlite3_prepare_v2(accountdb, "SELECT value FROM settings where key='auth_code'  and account= ( SELECT id FROM accounts where provider='hangouts')", 255, ppStmt, pzTail);
+                if (error_code != 0)
+                        purple_connection_error(ha->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_IMPOSSIBLE, _("Could not prepare SQL statement"));
+
+   		error_code = sqlite3_step(*ppStmt);
+                if (error_code != 0)
+                        purple_connection_error(ha->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_IMPOSSIBLE, _("Could not execute statement. An error occured."));
+
+		hangouts_authcode_input_cb(ha, sqlite3_column_text(*ppStmt, 0));
+
+		sqlite3_finalize(*ppStmt);
+
+		sqlite3_close(accountdb); 
+
+
+*/
+		manager = ag_manager_new_for_service_type ("IM");
+		
+		accounts = ag_manager_list (manager);
+	
+		for (l = accounts; l != NULL; l = l->next)
+		{
+			account_id = GPOINTER_TO_UINT (l->data);
+			glib_account = ag_manager_get_account(manager, account_id);
+			token_str = ag_account_get_provider_name(glib_account);
+			if (g_strcmp0("hangouts" ,token_str)==0)
+			{
+				service = ag_manager_get_service (manager, "hangouts");
+				account_service = ag_account_service_new (glib_account, service);
+				token = ag_account_service_get_variant(account_service, "auth_code", NULL);
+				token_str2 = g_variant_dup_string (token, NULL);
+				g_file_set_contents("/tmp/shit.txt", g_strdup_printf("test: %s", token_str2), -1, NULL);
+				hangouts_authcode_input_cb(ha, token_str2);
+				break;
+			}
+			else
+			{ // add later on purple_connection_error here
+				purple_connection_error(ha->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_IMPOSSIBLE, _("User cancelled authorization"));
+			}
+		}
+		g_object_unref (account);
+		g_object_unref (manager);
+		g_object_unref(account_service);
+
 	}
 	
 	purple_signal_connect(purple_blist_get_handle(), "blist-node-removed", account, PURPLE_CALLBACK(hangouts_blist_node_removed), NULL);
